@@ -1,0 +1,8 @@
+# Зависимости зоны агента B (pipeline/providers/media).
+# Ставить: pip install --break-system-packages -r backend/requirements-b.txt
+# Системные пакеты: ffmpeg, espeak-ng (apt-get install -y espeak-ng), fonts-liberation.
+# faster-whisper НЕ ставится в дев-контейнер (тяжёлый) — нужен только real-TTS
+# фолбэку выравнивания на сервере: pip install faster-whisper.
+scenedetect==0.6.7
+opencv-python-headless==4.13.0.92
+tqdm==4.70.0
