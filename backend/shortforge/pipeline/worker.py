@@ -95,41 +95,59 @@ async def run_master(ctx: dict | None, job_id: str) -> str:
 
 
 async def agent_reply(ctx: dict | None, job_id: str, message_id: str) -> str:
-    """ЗАГЛУШКА: чат-агента подключает интегратор (ADR-005)."""
+    """Чат-агент: предлагает план правок (pipeline/agent.py, ADR-005)."""
+    from . import agent as chat_agent
+
     async with get_sessionmaker()() as session:
         job = await session.get(VideoJob, job_id)
-        msg = ChatMessage(
-            job_id=job_id, role="agent",
-            text="агент ещё не подключён",
-            extra={"stub": True, "reply_to": message_id},
-        )
-        session.add(msg)
-        await session.flush()
-        await emit(
-            session, "chat", job=job, job_id=job_id,
-            payload={"message_id": msg.id, "role": "agent", "stub": True},
-        )
-        await session.commit()
-        return f"agent_reply stub -> {msg.id}"
+        if job is None:
+            return f"job {job_id} not found"
+        try:
+            detail = await chat_agent.run_agent_reply(session, job, message_id)
+            await session.commit()
+            return detail
+        except Exception as e:  # noqa: BLE001
+            log.exception("agent_reply(%s) failed", job_id)
+            await session.rollback()
+            msg = ChatMessage(
+                job_id=job_id, role="agent",
+                text=f"Не смог обработать запрос: {e}",
+                extra={"error": True, "reply_to": message_id},
+            )
+            session.add(msg)
+            await session.flush()
+            await emit(session, "chat", job=job, job_id=job_id,
+                       payload={"message_id": msg.id, "role": "agent", "error": True})
+            await session.commit()
+            return f"agent_reply error: {e}"
 
 
 async def apply_plan(ctx: dict | None, job_id: str, message_id: str) -> str:
-    """ЗАГЛУШКА: выполнение плана агента подключает интегратор (ADR-005)."""
+    """Выполнение подтверждённого плана агента (pipeline/agent.py, ADR-005)."""
+    from . import agent as chat_agent
+
     async with get_sessionmaker()() as session:
         job = await session.get(VideoJob, job_id)
-        msg = ChatMessage(
-            job_id=job_id, role="agent",
-            text="агент ещё не подключён",
-            extra={"stub": True, "plan_message_id": message_id},
-        )
-        session.add(msg)
-        await session.flush()
-        await emit(
-            session, "chat", job=job, job_id=job_id,
-            payload={"message_id": msg.id, "role": "agent", "stub": True},
-        )
-        await session.commit()
-        return f"apply_plan stub -> {msg.id}"
+        if job is None:
+            return f"job {job_id} not found"
+        try:
+            detail = await chat_agent.run_apply_plan(session, job, message_id, ctx)
+            await session.commit()
+            return detail
+        except Exception as e:  # noqa: BLE001
+            log.exception("apply_plan(%s) failed", job_id)
+            await session.rollback()
+            msg = ChatMessage(
+                job_id=job_id, role="system",
+                text=f"План не выполнен: {e}",
+                extra={"error": True, "plan_message_id": message_id},
+            )
+            session.add(msg)
+            await session.flush()
+            await emit(session, "chat", job=job, job_id=job_id,
+                       payload={"message_id": msg.id, "role": "system", "error": True})
+            await session.commit()
+            return f"apply_plan error: {e}"
 
 
 async def extra_candidates(

@@ -96,8 +96,9 @@ async def test_mock_llm_agent_turn():
         tools=tools,
     )
     assert out["stop_reason"] == "tool_use"
-    assert out["content"][0]["name"] == "replace_clip"
-    assert out["content"][0]["input"]["block_ordinal"] == 3
+    uses = [c for c in out["content"] if c.get("type") == "tool_use"]
+    assert uses and uses[0]["name"] == "replace_clip"
+    assert uses[0]["input"]["block_ordinal"] == 3
 
 
 async def test_mock_tts(tmp_path):

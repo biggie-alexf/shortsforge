@@ -229,27 +229,73 @@ class MockLLM:
         ordinal = int(m_ord.group(1)) if m_ord else 1
         tool_names = {t.get("name") for t in tools}
 
-        def tool_use(name: str, args: dict) -> dict:
+        def tu(name: str, args: dict) -> dict:
             return {
-                "stop_reason": "tool_use",
-                "content": [{
-                    "type": "tool_use", "id": f"toolu_mock_{name}",
-                    "name": name, "input": args,
-                }],
+                "type": "tool_use", "id": f"toolu_mock_{name}",
+                "name": name, "input": args,
             }
 
-        if ("replace" in low or "замен" in low or "клип" in low or "clip" in low) \
-                and "replace_clip" in tool_names:
-            return tool_use("replace_clip", {"block_ordinal": ordinal})
-        if ("rewrite" in low or "text" in low or "текст" in low or "переп" in low) \
-                and "edit_block" in tool_names:
-            return tool_use("edit_block", {"block_ordinal": ordinal, "instruction": last})
+        def plan(text: str, *uses: dict) -> dict:
+            return {
+                "stop_reason": "tool_use",
+                "content": [{"type": "text", "text": text}, *uses],
+            }
+
+        m_sec = re.search(r"(\d+)\s*(?:сек|sec|s\b)", low)
+        target = float(m_sec.group(1)) if m_sec else 25.0
+
+        if ("замен" in low or "replace" in low or "друго" in low) and (
+            "клип" in low or "clip" in low or "кадр" in low
+        ) and "replace_clip" in tool_names:
+            return plan(
+                f"Меняю клип в блоке {ordinal} на следующего кандидата.",
+                tu("replace_clip", {"block_ordinal": ordinal}),
+            )
+        if ("короч" in low or "ужми" in low or "shorter" in low or "длинн" in low
+                or "longer" in low) and "retime" in tool_names:
+            return plan(
+                f"Ужимаю сценарий под ~{target:.0f} секунд и переозвучиваю.",
+                tu("retime", {"target_seconds": target}),
+            )
+        if ("энерг" in low or "динамич" in low or "energetic" in low or "быстр" in low) \
+                and "add_sfx" in tool_names:
+            return plan(
+                "Делаю энергичнее: акцент на хук, музыка громче, пересборка.",
+                tu("add_sfx", {"block_ordinal": 1, "name": "impact"}),
+                tu("set_music", {"volume": 0.5}),
+                tu("rerender", {"step": "master"}),
+            )
+        if ("мем" in low or "смешн" in low or "звук" in low or "sfx" in low or "sound" in low) \
+                and "add_sfx" in tool_names:
+            return plan(
+                "Добавляю смешные звуковые акценты на середину и развязку.",
+                tu("add_sfx", {"block_ordinal": max(2, ordinal), "name": "sting"}),
+                tu("add_sfx", {"block_ordinal": max(3, ordinal), "name": "glitch"}),
+            )
+        if ("озвуч" in low or "voice" in low or "голос" in low) and "regen_voice" in tool_names:
+            return plan("Переозвучиваю сценарий.", tu("regen_voice", {}))
+        if ("саб" in low or "субтитр" in low or "subs" in low) and "restyle_subs" in tool_names:
+            return plan(
+                "Обновляю сабы (заметка в словарь стиля).",
+                tu("restyle_subs", {"note": last[:120]}),
+            )
+        if ("хук" in low or "hook" in low or "переп" in low or "текст" in low
+                or "rewrite" in low or "сценар" in low) and "edit_script" in tool_names:
+            args = {"instruction": last}
+            if m_ord:
+                args["block_ordinal"] = ordinal
+            return plan("Переписываю сценарий по инструкции.", tu("edit_script", args))
+        if ("пересобер" in low or "rerender" in low or "пересборк" in low) \
+                and "rerender" in tool_names:
+            step = "rough" in low and "rough" or "master"
+            return plan(f"Пересобираю {step}.", tu("rerender", {"step": step}))
         return {
             "stop_reason": "end_turn",
             "content": [{
                 "type": "text",
-                "text": "Mock agent: could not map the request to a tool. "
-                        "Try 'replace clip in block 3' or 'rewrite text of block 2'.",
+                "text": "Mock-агент не понял запрос. Примеры: «замени клип в блоке 3», "
+                        "«сделай короче до 25 сек», «сделай энергичнее», «добавь смешных "
+                        "звуков», «перепиши хук», «пересобери мастер».",
             }],
         }
 

@@ -95,7 +95,7 @@ def render_rough(
 
 def render_master(
     *, blocks: list[MixBlock], voice_wav: Path, ass_file: Path, title: str,
-    out_mp4: Path, workdir: Path, fps: int = 60,
+    out_mp4: Path, workdir: Path, fps: int = 60, music_volume: float | None = None,
 ) -> Path:
     """Мастер: музыка с дакингом, SFX по меткам, плашка, zoompan, loudnorm -14 LUFS."""
     ensure_fixtures()
@@ -130,7 +130,7 @@ def render_master(
         f"[0:v]{vf}[v]",
         "[1:a]aformat=sample_rates=44100:channel_layouts=mono,asplit=2[vo1][vo2]",
         f"[2:a]atrim=0:{total:.3f},aformat=sample_rates=44100:channel_layouts=mono,"
-        "volume=0.30[mus]",
+        f"volume={0.30 if music_volume is None else max(0.0, min(1.0, music_volume)):.2f}[mus]",
         "[mus][vo2]sidechaincompress=threshold=0.02:ratio=12:attack=5:release=300[duck]",
     ]
     mix_ins = ["[vo1]", "[duck]"]

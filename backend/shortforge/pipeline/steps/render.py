@@ -16,15 +16,40 @@ from .. import flow
 from .common import active_script, latest_voice, script_blocks
 
 
-async def _subs_dictionary(session: AsyncSession) -> dict[str, str]:
+async def _subs_dictionary(session: AsyncSession, job: VideoJob | None = None) -> dict[str, str]:
     raw = await get_setting(session, "subs_dictionary", "")
-    if not raw:
-        return {}
-    try:
-        data = json.loads(raw)
-        return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
-    except json.JSONDecodeError:
-        return {}
+    data: dict[str, str] = {}
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                data = {str(k): str(v) for k, v in parsed.items()}
+        except json.JSONDecodeError:
+            pass
+    # per-job overrides из чата-агента (overrides/subs_dictionary.json)
+    if job is not None:
+        p = job_dir(job.batch_id, job.id, "overrides") / "subs_dictionary.json"
+        if p.exists():
+            try:
+                ov = json.loads(p.read_text())
+                if isinstance(ov, dict):
+                    data.update({
+                        str(k): str(v) for k, v in ov.items() if k != "__notes__"
+                    })
+            except json.JSONDecodeError:
+                pass
+    return data
+
+
+def _music_volume(job: VideoJob) -> float | None:
+    p = job_dir(job.batch_id, job.id, "overrides") / "music.json"
+    if p.exists():
+        try:
+            v = json.loads(p.read_text()).get("volume")
+            return float(v) if v is not None else None
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return None
+    return None
 
 
 async def _gather(session: AsyncSession, job: VideoJob):
@@ -87,7 +112,7 @@ async def _make_render(
     out_mp4 = renders_dir / f"{kind}_v{version}.mp4"
     preview = renders_dir / f"{kind}_v{version}.jpg"
 
-    write_ass(ass_file, voice.words, dictionary=await _subs_dictionary(session))
+    write_ass(ass_file, voice.words, dictionary=await _subs_dictionary(session, job))
     voice_wav = abs_path(voice.wav_path)
 
     if kind == "rough":
@@ -99,6 +124,7 @@ async def _make_render(
         mix.render_master(
             blocks=mix_blocks, voice_wav=voice_wav, ass_file=ass_file,
             title=script.title, out_mp4=out_mp4, workdir=workdir, fps=60,
+            music_volume=_music_volume(job),
         )
     mix.make_preview(out_mp4, preview)
 
