@@ -1,0 +1,42 @@
+services:
+  caddy:
+    image: caddy:2.9
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on: [api, frontend]
+    restart: unless-stopped
+  frontend:
+    build: { context: .., dockerfile: deploy/Dockerfile.front }
+    restart: unless-stopped
+  api:
+    build: { context: .., dockerfile: deploy/Dockerfile.api }
+    command: uvicorn shortforge.api.app:app --host 0.0.0.0 --port 8000
+    environment: &env
+      DATABASE_URL: postgresql+asyncpg://shortforge:${POSTGRES_PASSWORD}@db:5432/shortforge
+      REDIS_URL: redis://redis:6379/0
+      APP_SECRET: ${APP_SECRET}
+      DATA_DIR: /data
+    volumes: ["${DATA_DIR}:/data"]
+    depends_on: [db, redis]
+    restart: unless-stopped
+  worker:
+    build: { context: .., dockerfile: deploy/Dockerfile.api }
+    command: arq shortforge.pipeline.worker.WorkerSettings
+    environment: *env
+    volumes: ["${DATA_DIR}:/data"]
+    depends_on: [db, redis]
+    restart: unless-stopped
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: shortforge
+      POSTGRES_DB: shortforge
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: [pg_data:/var/lib/postgresql/data]
+    restart: unless-stopped
+  redis:
+    image: redis:7
+    restart: unless-stopped
+volumes: { caddy_data: {}, pg_data: {} }
