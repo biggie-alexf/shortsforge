@@ -786,6 +786,47 @@ def create_app() -> FastAPI:
 
     # ---------------------------------------------------------- ops (GitOps-диагностика)
 
+    @app.get("/api/ops/upload")
+    async def ops_upload_form(user: User = Depends(current_user)):
+        """Мини-форма загрузки git-bundle (канал обновлений, когда прямой push
+        в GitHub из Claude недоступен). Файл подхватит autodeploy-таймер хоста."""
+        from fastapi.responses import HTMLResponse
+
+        return HTMLResponse(
+            "<!doctype html><meta charset=utf-8><title>ShortForge ops</title>"
+            "<body style='background:#111;color:#eee;font:14px monospace;padding:24px'>"
+            "<h3>Загрузка incoming.bundle</h3>"
+            "<form id=f method=post action='/api/ops/upload' enctype='multipart/form-data'>"
+            "<input type=file name=bundle accept='.bundle' required> "
+            "<button>Загрузить</button></form>"
+            "<p>Применится autodeploy-таймером в течение 2 минут.</p></body>"
+        )
+
+    @app.post("/api/ops/upload")
+    async def ops_upload_bundle(
+        request: Request, user: User = Depends(current_user)
+    ):
+        from fastapi.responses import HTMLResponse
+
+        form = await request.form()
+        up = form.get("bundle")
+        if up is None or not hasattr(up, "read"):
+            raise HTTPException(status_code=422, detail="нет файла bundle")
+        data = await up.read()
+        if len(data) < 100 or not data.startswith(b"# v2 git bundle"):
+            raise HTTPException(status_code=422, detail="это не git-bundle v2")
+        if len(data) > 200 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="bundle больше 200MB")
+        dest = os.path.join(os.environ.get("DATA_DIR", "/data"), "incoming.bundle")
+        tmp = dest + ".part"
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, dest)
+        return HTMLResponse(
+            f"<body style='background:#111;color:#8f8;font:14px monospace;padding:24px'>"
+            f"OK: {len(data)} байт. Autodeploy применит в течение 2 минут.</body>"
+        )
+
     @app.get("/api/ops/status")
     async def ops_status(
         user: User = Depends(current_user), session: AsyncSession = Depends(get_session)

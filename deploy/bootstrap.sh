@@ -8,7 +8,8 @@ cd /opt/shortforge
 echo "== 1/5 Docker и базовые пакеты"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -yq docker.io docker-compose-v2 git curl ca-certificates
+apt-get install -yq docker.io docker-compose-v2 git curl ca-certificates fail2ban
+systemctl enable --now fail2ban  # боты долбят ssh на свежих Hetzner-IP
 systemctl enable --now docker
 
 echo "== 2/5 .env (создаётся один раз, секреты генерируются)"
