@@ -15,6 +15,10 @@ log() { echo "$(date -Is) $*" | tee -a "$LOG" >> "$DLOG"; }
 redeploy() {
   cd "$REPO/deploy"
   if docker compose --env-file ../.env up -d --build >>"$LOG" 2>&1; then
+    # Caddyfile примонтирован volume-ом — compose не видит его изменений
+    docker compose --env-file ../.env restart caddy >>"$LOG" 2>&1
+    # самообновление: иначе правки этого скрипта никогда не доехали бы
+    install -m 0755 "$REPO/deploy/autodeploy.sh" /usr/local/bin/shortforge-autodeploy
     sleep 5
     docker compose --env-file ../.env exec -T api python -m shortforge.db_init >>"$LOG" 2>&1
     git -C "$REPO" log -1 --format='%h %cI %s' > /data/shortforge/_version
