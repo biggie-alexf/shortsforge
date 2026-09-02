@@ -15,7 +15,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -783,6 +783,84 @@ def create_app() -> FastAPI:
         user: User = Depends(current_user), session: AsyncSession = Depends(get_session)
     ):
         return await settings_store.providers_status(session)
+
+    # ---------------------------------------------------------- ops (GitOps-диагностика)
+
+    @app.get("/api/ops/status")
+    async def ops_status(
+        user: User = Depends(current_user), session: AsyncSession = Depends(get_session)
+    ):
+        """Состояние инстанса: версия кода, диск, очередь, последние ошибки.
+        Нужен для удалённой диагностики, когда прямого SSH из Claude нет (GitOps)."""
+        import shutil
+        import subprocess
+
+        from ..models import Event, StepRun
+
+        def sh(cmd: list[str]) -> str:
+            try:
+                return subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=5
+                ).stdout.strip()
+            except Exception as e:  # noqa: BLE001
+                return f"err: {e}"
+
+        du = shutil.disk_usage(os.environ.get("DATA_DIR", "/data"))
+        errors = (
+            (
+                await session.execute(
+                    select(Event)
+                    .where(Event.type == "error")
+                    .order_by(Event.id.desc())
+                    .limit(10)
+                )
+            ).scalars().all()
+        )
+        running = (
+            (
+                await session.execute(
+                    select(StepRun)
+                    .where(StepRun.ok.is_(None))
+                    .order_by(StepRun.started_at.desc())
+                    .limit(10)
+                )
+            ).scalars().all()
+        )
+        jobs_by_status = (
+            await session.execute(
+                select(VideoJob.status, func.count()).group_by(VideoJob.status)
+            )
+        ).all()
+        deploy_log = ""
+        for p in ("/var/log/shortforge-deploy.log", "/data/_deploy.log"):
+            if os.path.exists(p):
+                with open(p, "rb") as f:
+                    f.seek(max(0, os.path.getsize(p) - 4000))
+                    deploy_log = f.read().decode(errors="replace")
+                break
+        version = ""
+        vfile = os.path.join(os.environ.get("DATA_DIR", "/data"), "_version")
+        if os.path.exists(vfile):
+            with open(vfile) as f:
+                version = f.read().strip()
+        return {
+            "git": version
+            or sh(["git", "-C", "/app", "log", "-1", "--format=%h %cI %s"])
+            or sh(["git", "log", "-1", "--format=%h %cI %s"]),
+            "disk_free_gb": round(du.free / 1e9, 1),
+            "disk_used_pct": round(du.used / du.total * 100, 1),
+            "providers": await settings_store.providers_status(session),
+            "jobs": {str(s.value): c for s, c in jobs_by_status},
+            "running_steps": [
+                {"job_id": r.job_id, "step": r.step.value, "since": iso(r.started_at)}
+                for r in running
+            ],
+            "last_errors": [
+                {"job_id": e.job_id, "payload": e.payload, "at": iso(e.created_at)}
+                for e in errors
+            ],
+            "deploy_log_tail": deploy_log,
+        }
 
     # ---------------------------------------------------------- users
 
