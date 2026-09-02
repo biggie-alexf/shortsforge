@@ -1,10 +1,16 @@
 # без домена: self-signed TLS на IP. Когда будет домен — заменить ":443" на "домен".
 :443 {
-  tls internal
-  handle /api/* { reverse_proxy api:8000 }
-  handle /media/* { reverse_proxy api:8000 }
-  handle { reverse_proxy frontend:80 }
+	tls internal
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle /media/* {
+		reverse_proxy api:8000
+	}
+	handle {
+		reverse_proxy frontend:80
+	}
 }
 :80 {
-  redir https://{host}{uri}
+	redir https://{host}{uri}
 }
