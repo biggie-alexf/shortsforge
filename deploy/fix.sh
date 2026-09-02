@@ -8,7 +8,8 @@ docker compose --env-file ../.env up -d --build
 docker compose --env-file ../.env restart caddy
 sleep 4
 set +x
-echo "=== Проверка 443 ==="
-curl -skI https://178.104.185.191/ | head -3
+echo "=== Проверка входа ==="
+curl -sI http://127.0.0.1/ | head -2
+curl -skI https://178.104.185.191/ | head -2
 echo "=== Статус контейнеров ==="
 docker ps --format '{{.Names}} {{.Status}}'
